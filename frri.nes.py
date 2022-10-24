@@ -5,6 +5,7 @@ from threading import Thread
 from queue import Queue
 from datetime import datetime
 import urllib.request
+import configparser
 
 # proprietary
 import pygame
@@ -29,6 +30,36 @@ class FRRIUtil:
 
     def Error(*args, **kwargs):
         print(*args, file=sys.stderr, **kwargs)
+
+class FRRIConfig:
+    CONST_CONFIG_FILE = "frri.cfg"
+
+    def __init__(self):
+        pass
+
+    def Begin(self):
+        self.config = configparser.ConfigParser()
+
+        if not os.path.isfile(FRRIConfig.CONST_CONFIG_FILE):
+            FRRIUtil.Print("Writing out new config file...")
+            self.config['AUDIO'] = {'MUTED' : 'False',
+                                    'WELCOME' : 'True',
+                                    'TTS' : 'True'}
+            self.config['TWITTER'] = {'ENABLED' : 'False'}
+            with open(FRRIConfig.CONST_CONFIG_FILE, 'w') as configfile:
+                self.config.write(configfile)
+            FRRIUtil.Print("Done")
+
+        FRRIUtil.Print("Reading config file...")
+        self.config.read(FRRIConfig.CONST_CONFIG_FILE)
+        FRRIUtil.Print("Done")
+
+    def End(self):
+        with open(CONST_CONFIG_FILE, 'w') as configfile:
+            self.config.write(configfile)
+
+    def GetConfig(self):
+        return self.config
 
 class FRRINet:
     def __init(self):
@@ -62,12 +93,18 @@ class FRRITwitter:
         pass
 
     def Begin(self):
-        FRRIUtil.Print("Logging into Twitter...")
-        self.client = tweepy.Client(consumer_key = Secrets.API_KEY,
-                                    consumer_secret = Secrets.API_SECRET,
-                                    access_token = Secrets.OAUTH_TOKEN,
-                                    access_token_secret = Secrets.OAUTH_TOKEN_SECRET)
-        FRRIUtil.Print("Logged in successfully!")
+        global frri_config
+        self.enabled = frri_config.GetConfig().getboolean('TWITTER', 'ENABLED')
+
+        if self.enabled:
+            FRRIUtil.Print("Logging into Twitter...")
+            self.client = tweepy.Client(consumer_key = Secrets.API_KEY,
+                                        consumer_secret = Secrets.API_SECRET,
+                                        access_token = Secrets.OAUTH_TOKEN,
+                                        access_token_secret = Secrets.OAUTH_TOKEN_SECRET)
+            FRRIUtil.Print("Logged in successfully!")
+        else:
+            FRRIUtil.Print("Not logging into Twitter - not Enabled in config file")
 
     def End(self):
         pass
@@ -154,18 +191,27 @@ class FRRISpeaker:
         pass
 
     def Begin(self):
+        global frri_config
         pygame.mixer.init()
         self.sound_welcome = pygame.mixer.Sound(FRRISpeaker.CONST_SOUND_WELCOME)
-        pygame.mixer.Sound.play(self.sound_welcome)
+        if frri_config.GetConfig().getboolean('AUDIO', 'WELCOME'):
+            pygame.mixer.Sound.play(self.sound_welcome)
+        self.muted = frri_config.GetConfig().getboolean('AUDIO', 'MUTED')
+        self.tts = frri_config.GetConfig().getboolean('AUDIO', 'TTS')
 
     def End(self):
         pass
 
+    def ToggleMute(self):
+        self.muted = not self.muted
+
     def PlaySound(self, filename):
-        pygame.mixer.Sound.play(pygame.mixer.Sound(os.path.join(FRRISpeaker.CONST_PATH_SOUND, filename)))
+        if not self.muted:
+            pygame.mixer.Sound.play(pygame.mixer.Sound(os.path.join(FRRISpeaker.CONST_PATH_SOUND, filename)))
 
     def TTS(self, text):
-        return os.system("espeak -s 155 -a 200 \""+text+"\"")
+        if self.tts:
+            os.system("espeak -s 155 -a 200 \""+text+"\"")
 
 class FRRICamera:
     CONST_WEBCAM_URL = "192.168.8.80:8080/photo.jpg"
@@ -186,6 +232,9 @@ class FRRICamera:
 
 #---
 # Script
+frri_config = FRRIConfig()
+frri_config.Begin()
+
 frri_net = FRRINet()
 frri_net.Begin()
 
@@ -222,3 +271,10 @@ while(True):
             FRRIUtil.Print("P1 discconnected")
 
     previous_state = next_state
+
+
+frri_speaker.End()
+frri_controller_manager.End()
+frri_twitter.End()
+frri_net.End()
+frri_config.End()
