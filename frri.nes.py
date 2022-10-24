@@ -164,6 +164,9 @@ class FRRISpeaker:
     def PlaySound(self, filename):
         pygame.mixer.Sound.play(pygame.mixer.Sound(os.path.join(FRRISpeaker.CONST_PATH_SOUND, filename)))
 
+    def TTS(self, text):
+        return os.system("espeak -s 155 -a 200 \""+text+"\"")
+
 class FRRICamera:
     CONST_WEBCAM_URL = "192.168.8.80:8080/photo.jpg"
     CONST_PATH_TEMP = os.path.join(FRRIConst.CONST_PATH_ASSETS, "temp")
@@ -209,9 +212,13 @@ while(True):
     if previous_state is not None:
         if not previous_state[0].Connected() and next_state[0].Connected():
             frri_speaker.PlaySound("plugged.wav")
+            time.sleep(0.5)
+            frri_speaker.TTS("Player one connected")
             FRRIUtil.Print("P1 connected")
         if previous_state[0].Connected() and not next_state[0].Connected():
             frri_speaker.PlaySound("unplugged.wav")
+            time.sleep(0.5)
+            frri_speaker.TTS("Player one disconnected")
             FRRIUtil.Print("P1 discconnected")
 
     previous_state = next_state
