@@ -116,20 +116,24 @@ class FRRITwitter:
 
     def TwitterConnect(self):
         FRRIUtil.Print("Logging into Twitter...")
-        self.client = tweepy.Client(consumer_key = Secrets.API_KEY,
-                                    consumer_secret = Secrets.API_SECRET,
-                                    access_token = Secrets.OAUTH_TOKEN,
-                                    access_token_secret = Secrets.OAUTH_TOKEN_SECRET)
+        try:
+            self.client = tweepy.Client(consumer_key = Secrets.API_KEY,
+                                        consumer_secret = Secrets.API_SECRET,
+                                        access_token = Secrets.OAUTH_TOKEN,
+                                        access_token_secret = Secrets.OAUTH_TOKEN_SECRET)
 
-        auth = tweepy.OAuthHandler(Secrets.API_KEY,
-                                    Secrets.API_SECRET)
+            auth = tweepy.OAuthHandler(Secrets.API_KEY,
+                                        Secrets.API_SECRET)
 
-        auth.set_access_token(Secrets.OAUTH_TOKEN,
-                                Secrets.OAUTH_TOKEN_SECRET)
+            auth.set_access_token(Secrets.OAUTH_TOKEN,
+                                    Secrets.OAUTH_TOKEN_SECRET)
 
-        self.api = tweepy.API(auth)
-
-        FRRIUtil.Print("Logged in successfully!")
+            self.api = tweepy.API(auth)
+            FRRIUtil.Print("Logged in successfully!")
+        except Exception as e:
+            FRRIUtil.Error("Failed to log into Twitter: "+str(e))
+            self.TwitterDisconnect()
+            return False
 
     def TwitterDisconnect(self):
         self.client = None
@@ -153,8 +157,8 @@ class FRRITwitter:
     def Tweet(self, message, media_str=None):
         if self.enabled:
             if media_str is not None:
-                media = self.api.media_upload(media_str)
                 try:
+                    media = self.api.media_upload(media_str)
                     response = self.client.create_tweet(text=message, media_ids=[media.media_id])
                 except Exception as e:
                     FRRIUtil.Error("Caught exception during Tweet: "+str(e))
