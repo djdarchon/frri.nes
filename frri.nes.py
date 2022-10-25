@@ -122,7 +122,10 @@ class FRRITwitter:
         if self.enabled:
             if media_str is not None:
                 media = self.api.media_upload(media_str)
-                response = self.client.create_tweet(text=message, media_ids=[media.media_id])
+                try:
+                    response = self.client.create_tweet(text=message, media_ids=[media.media_id])
+                except Exception as e:
+                    FRRIUtil.Error("Caught exception during Tweet: "+str(e))
                 FRRIUtil.Print("Tweeted: "+message+" along with photo at "+media_str+" !!!")
             else:
                 FRRIUtil.Error("Unable to Tweet without an image; media not supplied to function call")
@@ -323,7 +326,7 @@ while(True):
             if last_tts != 2:
                 frri_speaker.TTS("TWO!")
                 last_tts = 2
-        else:
+        elif delta > 0.2:
             if last_tts != 3:
                 frri_speaker.TTS("THREE!")
                 last_tts = 3
