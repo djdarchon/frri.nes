@@ -9,6 +9,7 @@ import configparser
 
 # proprietary
 import pygame
+import pygame._sdl2.audio as sdl2_audio
 import tweepy
 
 # user
@@ -44,10 +45,10 @@ class FRRIConfig:
             FRRIUtil.Print("Writing out new config file...")
             self.config['AUDIO'] = {'MUTED' : 'False',
                                     'WELCOME' : 'True',
-                                    'TTS' : 'True'}
+                                    'DEVICENAME' : 'USB2.0 Device, USB Audio'}
             self.config['TWITTER'] = {'ENABLED' : 'False'}
-            with open(FRRIConfig.CONST_CONFIG_FILE, 'w') as configfile:
-                self.config.write(configfile)
+            self.config['MAIN'] = {'ANNOUNCE_COUNTDOWN' : 'True'}
+            self.WriteConfig()
             FRRIUtil.Print("Done")
 
         FRRIUtil.Print("Reading config file...")
@@ -55,11 +56,18 @@ class FRRIConfig:
         FRRIUtil.Print("Done")
 
     def End(self):
-        with open(CONST_CONFIG_FILE, 'w') as configfile:
-            self.config.write(configfile)
+        self.WriteConfig()
 
     def GetConfig(self):
         return self.config
+
+    def SetConfig(self, section, field, value):
+        self.config.set(section, field, str(value))
+        self.WriteConfig()
+
+    def WriteConfig(self):
+        with open(FRRIConfig.CONST_CONFIG_FILE, 'w') as configfile:
+            self.config.write(configfile)
 
 class FRRINet:
     def __init(self):
@@ -94,29 +102,53 @@ class FRRITwitter:
 
     def Begin(self):
         global frri_config
+        self.client = None
+        self.api = None
         self.enabled = frri_config.GetConfig().getboolean('TWITTER', 'ENABLED')
 
         if self.enabled:
-            FRRIUtil.Print("Logging into Twitter...")
-            self.client = tweepy.Client(consumer_key = Secrets.API_KEY,
-                                        consumer_secret = Secrets.API_SECRET,
-                                        access_token = Secrets.OAUTH_TOKEN,
-                                        access_token_secret = Secrets.OAUTH_TOKEN_SECRET)
-
-            auth = tweepy.OAuthHandler(Secrets.API_KEY,
-                                        Secrets.API_SECRET)
-
-            auth.set_access_token(Secrets.OAUTH_TOKEN,
-                                    Secrets.OAUTH_TOKEN_SECRET)
-
-            self.api = tweepy.API(auth)
-
-            FRRIUtil.Print("Logged in successfully!")
+            self.TwitterConnect()
         else:
             FRRIUtil.Print("Not logging into Twitter - not Enabled in config file")
 
     def End(self):
         pass
+
+    def TwitterConnect(self):
+        FRRIUtil.Print("Logging into Twitter...")
+        self.client = tweepy.Client(consumer_key = Secrets.API_KEY,
+                                    consumer_secret = Secrets.API_SECRET,
+                                    access_token = Secrets.OAUTH_TOKEN,
+                                    access_token_secret = Secrets.OAUTH_TOKEN_SECRET)
+
+        auth = tweepy.OAuthHandler(Secrets.API_KEY,
+                                    Secrets.API_SECRET)
+
+        auth.set_access_token(Secrets.OAUTH_TOKEN,
+                                Secrets.OAUTH_TOKEN_SECRET)
+
+        self.api = tweepy.API(auth)
+
+        FRRIUtil.Print("Logged in successfully!")
+
+    def TwitterDisconnect(self):
+        self.client = None
+        self.api = None
+
+    def GetTwitterConnected(self):
+        return (self.client is not None and self.api is not None)
+
+    def ToggleEnabled(self):
+        global frri_config
+        self.enabled = not self.enabled
+        if self.enabled:
+            self.TwitterConnect()
+        else:
+            self.TwitterDisconnect()
+        frri_config.SetConfig('TWITTER', 'ENABLED', self.enabled)
+
+    def GetEnabled(self):
+        return self.enabled
 
     def Tweet(self, message, media_str=None):
         if self.enabled:
@@ -189,8 +221,8 @@ class FRRIControllerManager:
 
         state['A'] = int(value & 0x80) != 0
         state['B'] = int(value & 0x40) != 0
-        state['START'] = int(value & 0x20) != 0
-        state['SELECT'] = int(value & 0x10) != 0
+        state['SELECT'] = int(value & 0x20) != 0
+        state['START'] = int(value & 0x10) != 0
         state['UP'] = int(value & 0x08) != 0
         state['DOWN'] = int(value & 0x04) != 0
         state['LEFT'] = int(value & 0x02) != 0
@@ -208,32 +240,47 @@ class FRRIControllerManager:
 class FRRISpeaker:
     CONST_PATH_SOUND = os.path.join(FRRIConst.CONST_PATH_ASSETS, "sound")
     CONST_SOUND_WELCOME = os.path.join(CONST_PATH_SOUND, "welcome.wav")
+    CONST_SOUND_SPEECH = os.path.join(CONST_PATH_SOUND, "speech.wav")
 
     def __init__(self):
         pass
 
     def Begin(self):
         global frri_config
-        pygame.mixer.init()
-        self.sound_welcome = pygame.mixer.Sound(FRRISpeaker.CONST_SOUND_WELCOME)
-        if frri_config.GetConfig().getboolean('AUDIO', 'WELCOME'):
-            pygame.mixer.Sound.play(self.sound_welcome)
+        pygame.mixer.init(devicename=frri_config.GetConfig().get('AUDIO', 'DEVICENAME'))
         self.muted = frri_config.GetConfig().getboolean('AUDIO', 'MUTED')
-        self.tts = frri_config.GetConfig().getboolean('AUDIO', 'TTS')
+        if frri_config.GetConfig().getboolean('AUDIO', 'WELCOME'):
+            self.PlaySound(FRRISpeaker.CONST_SOUND_WELCOME, True)
+            self.Wait()
+            self.TTS("System Online!")
 
     def End(self):
         pass
 
-    def ToggleMute(self):
+    def ToggleMuted(self):
+        global frri_config
         self.muted = not self.muted
+        frri_config.SetConfig('AUDIO', 'MUTED', self.muted)
 
-    def PlaySound(self, filename):
-        if not self.muted:
+    def GetMuted(self):
+        return self.muted
+
+    def PlaySound(self, filename, mute_override=False):
+        if (not self.GetMuted()) or mute_override:
             pygame.mixer.Sound.play(pygame.mixer.Sound(os.path.join(FRRISpeaker.CONST_PATH_SOUND, filename)))
 
-    def TTS(self, text):
-        if self.tts:
-            os.system("espeak -s 155 -a 200 \""+text+"\"")
+    def Wait(self):
+        while(pygame.mixer.get_busy()):
+            time.sleep(0.1)
+
+    def TTS(self, text, mute_override=False):
+        command = "espeak --stdout -s 155 -a 200 \""+text+"\" > "+FRRISpeaker.CONST_SOUND_SPEECH
+        os.system(command)
+        self.PlaySound(FRRISpeaker.CONST_SOUND_SPEECH, mute_override)
+        try:
+            os.remove(FRRISpeaker.CONST_SOUND_SPEECH)
+        except Exception as e:
+            FRRIUtil.Error("Unable to delete speech file")
 
 class FRRICamera:
     CONST_WEBCAM_URL = "http://192.168.8.80:8080/photo.jpg"
@@ -270,26 +317,37 @@ class FRRICamera:
 
 #---
 # Script
+FRRIUtil.Print("Config Begin")
 frri_config = FRRIConfig()
 frri_config.Begin()
 
+FRRIUtil.Print("Net Begin")
 frri_net = FRRINet()
 frri_net.Begin()
 
 FRRIUtil.Print("Testing network connection...")
-if (not frri_net.InternetActive()):
-    FRRIUtil.Error("Not Good!")
-    sys.exit()
+connected = False
+while not connected:
+    if (not frri_net.InternetActive()):
+        time.sleep(3)
+        FRRIUtil.Error("Waiting...")
+    else:
+        FRRIUtil.Print("Connection successful")
+        connected = True
 
+FRRIUtil.Print("Twitter Begin")
 frri_twitter = FRRITwitter()
 frri_twitter.Begin()
 
+FRRIUtil.Print("Controller Begin")
 frri_controller_manager = FRRIControllerManager()
 frri_controller_manager.Begin()
 
+FRRIUtil.Print("Speaker Begin")
 frri_speaker = FRRISpeaker()
 frri_speaker.Begin()
 
+FRRIUtil.Print("Camera Begin")
 frri_camera = FRRICamera()
 frri_camera.Begin()
 
@@ -307,6 +365,7 @@ while(True):
     if previous_state is None:
         previous_state = current_state
 
+    # controller disconnect and connet
     if previous_state is not None:
         if not previous_state[0].Connected() and current_state[0].Connected():
             frri_speaker.PlaySound("plugged.wav")
@@ -319,6 +378,58 @@ while(True):
             frri_speaker.TTS("Player one disconnected")
             FRRIUtil.Print("P1 discconnected")
 
+    # user configuration
+    if previous_state[0].Connected() and current_state[0].Connected():
+        # mute control
+
+        if current_state[0].Select():
+            # SELECT + DOWN: mute toggle
+            if (not previous_state[0].Down()) and current_state[0].Down():
+                frri_speaker.ToggleMuted()
+                if frri_speaker.GetMuted():
+                    frri_speaker.TTS("Countdown Muted", True)
+                    frri_speaker.Wait()
+                else:
+                    frri_speaker.TTS("Countdown Unmuted", True)
+                    frri_speaker.Wait()
+
+            # SELECT + UP: twitter toggle
+            if (not previous_state[0].Up()) and current_state[0].Up():
+                frri_twitter.ToggleEnabled()
+                if frri_twitter.GetEnabled():
+                    temp = "Twitter enabled "
+                    if frri_twitter.GetTwitterConnected():
+                        temp += "and connected"
+                    else:
+                        temp += "but failed to connect"
+                    frri_speaker.TTS(temp, True)
+                    frri_speaker.Wait()
+                else:
+                    frri_speaker.TTS("Twitter Disabled", True)
+                    frri_speaker.Wait()
+
+            # SELECT + START: config report
+            if (not previous_state[0].Start()) and current_state[0].Start():
+                frri_speaker.TTS("System Configuration", True)
+                frri_speaker.Wait()
+                if frri_speaker.GetMuted():
+                    frri_speaker.TTS("Countdown is Muted", True)
+                    frri_speaker.Wait()
+                else:
+                    frri_speaker.TTS("Countdown is Unmuted", True)
+                    frri_speaker.Wait()
+                if frri_twitter.GetEnabled():
+                    temp = "Twitter is Enabled "
+                    if frri_twitter.GetTwitterConnected():
+                        temp += "and connected"
+                    else:
+                        temp += "but not connected"
+                    frri_speaker.TTS(temp, True)
+                    frri_speaker.Wait()
+                else:
+                    frri_speaker.TTS("Twitter is Disabled", True)
+                    frri_speaker.Wait()
+
     # if controller is plugged in and we know the last state
     # and they're pressing A now, process
     if not current_state[0].Connected() or not previous_state[0].A():
@@ -328,24 +439,24 @@ while(True):
     elif not captured:
         delta = (now - last_press).total_seconds()
 
-        if delta > 4.:
+        if delta > 4.2:
             FRRIUtil.Print("Taking photo!")
             photo = frri_camera.GetPhoto()
-            if (photo is not None) and frri_twitter.Tweet("Hello from #FRRI_nes!", photo):
+            if (photo is not None) and frri_twitter.Tweet("Fuzzy greetings from #FRRI_nes!", photo):
                 frri_speaker.PlaySound("photosnap.wav")
                 frri_camera.DeletePhoto()
             else:
                 frri_speaker.PlaySound("photoerror.wav")
             captured = True
-        if delta > 3.:
+        if delta > 3.2:
             if last_tts != 0:
                 frri_speaker.TTS("LET'S GO!")
                 last_tts = 0
-        elif delta > 2.:
+        elif delta > 2.2:
             if last_tts != 1:
                 frri_speaker.TTS("ONE!")
                 last_tts = 1
-        elif delta > 1.:
+        elif delta > 1.2:
             if last_tts != 2:
                 frri_speaker.TTS("TWO!")
                 last_tts = 2
@@ -357,9 +468,15 @@ while(True):
     previous_state = current_state
 
 
+FRRIUtil.Print("Camera End")
 frri_camera.End()
+FRRIUtil.Print("Speaker End")
 frri_speaker.End()
+FRRIUtil.Print("Controller End")
 frri_controller_manager.End()
+FRRIUtil.Print("Twitter End")
 frri_twitter.End()
+FRRIUtil.Print("Net End")
 frri_net.End()
+FRRIUtil.Print("Config End")
 frri_config.End()

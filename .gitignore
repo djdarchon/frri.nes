@@ -1,1 +1,4 @@
 secrets.py
+launcher.sh
+logs
+__pycache__
