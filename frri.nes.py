@@ -446,12 +446,19 @@ while(True):
         if delta > 4.2:
             FRRIUtil.Print("Taking photo!")
             photo = frri_camera.GetPhoto()
-            if (photo is not None) and frri_twitter.Tweet("Fuzzy greetings from #FRRI_nes!", photo):
-                frri_speaker.PlaySound("photosnap.wav")
-                frri_camera.DeletePhoto()
-            else:
-                frri_speaker.PlaySound("photoerror.wav")
             captured = True
+            frri_speaker.PlaySound("photosnap.wav")
+            frri_speaker.Wait()
+            if frri_twitter.GetEnabled():
+                frri_speaker.TTS("Sending Tweet")
+                frri_speaker.Wait()
+                if (photo is not None) and frri_twitter.Tweet("Fuzzy greetings from #FRRI_nes!", photo):
+                    frri_camera.DeletePhoto()
+                    frri_speaker.TTS("Tweet sent!")
+                else:
+                    frri_speaker.PlaySound("photoerror.wav")
+                    frri_speaker.Wait()
+                    frri_speaker.TTS("Tweet failed")
         if delta > 3.2:
             if last_tts != 0:
                 frri_speaker.TTS("LET'S GO!")
