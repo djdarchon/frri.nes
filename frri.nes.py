@@ -102,6 +102,15 @@ class FRRITwitter:
                                         consumer_secret = Secrets.API_SECRET,
                                         access_token = Secrets.OAUTH_TOKEN,
                                         access_token_secret = Secrets.OAUTH_TOKEN_SECRET)
+
+            auth = tweepy.OAuthHandler(Secrets.API_KEY,
+                                        Secrets.API_SECRET)
+
+            auth.set_access_token(Secrets.OAUTH_TOKEN,
+                                    Secrets.OAUTH_TOKEN_SECRET)
+
+            self.api = tweepy.API(auth)
+
             FRRIUtil.Print("Logged in successfully!")
         else:
             FRRIUtil.Print("Not logging into Twitter - not Enabled in config file")
@@ -109,10 +118,16 @@ class FRRITwitter:
     def End(self):
         pass
 
-    def Tweet(self):
-        #message = "[Furmeet Roaming Relay Interface is now Online]" 
-        #response = client.create_tweet(text=message)
-        pass
+    def Tweet(self, message, media_str=None):
+        if self.enabled:
+            if media_str is not None:
+                media = self.api.media_upload(media_str)
+                response = self.client.create_tweet(text=message, media_ids=[media.media_id])
+                FRRIUtil.Print("Tweeted: "+message+" along with photo at "+media_str+" !!!")
+            else:
+                FRRIUtil.Error("Unable to Tweet without an image; media not supplied to function call")
+        else:
+            FRRIUtil.Error("Attempted to Tweet while Twitter is disabled (see config file)")
 
 class FRRIControllerState:
     def __init__(self, new_state):
@@ -214,7 +229,7 @@ class FRRISpeaker:
             os.system("espeak -s 155 -a 200 \""+text+"\"")
 
 class FRRICamera:
-    CONST_WEBCAM_URL = "192.168.8.80:8080/photo.jpg"
+    CONST_WEBCAM_URL = "http://192.168.8.80:8080/photo.jpg"
     CONST_PATH_TEMP = os.path.join(FRRIConst.CONST_PATH_ASSETS, "temp")
     CONST_FILENAME_PHOTO = "photo.jpg"
 
@@ -228,7 +243,8 @@ class FRRICamera:
         pass
 
     def GetPhoto(self):
-        return urllib.request.urlretrieve(CONST_WEBCAM_URL, os.path.join(CONST_PATH_TEMP, CONST_FILENAME_PHOTO))
+        urllib.request.urlretrieve(FRRICamera.CONST_WEBCAM_URL, os.path.join(FRRICamera.CONST_PATH_TEMP, FRRICamera.CONST_FILENAME_PHOTO))
+        return os.path.join(FRRICamera.CONST_PATH_TEMP, FRRICamera.CONST_FILENAME_PHOTO)
 
 #---
 # Script
@@ -252,27 +268,70 @@ frri_controller_manager.Begin()
 frri_speaker = FRRISpeaker()
 frri_speaker.Begin()
 
+frri_camera = FRRICamera()
+frri_camera.Begin()
+
 previous_state = None
+
+last_press = datetime.now()
+captured = False
 
 while(True):
     time.sleep(1./FRRIConst.CONST_FPS)
-    next_state = frri_controller_manager.GetControllers()
+
+    now = datetime.now()
+
+    current_state = frri_controller_manager.GetControllers()
+    if previous_state is None:
+        previous_state = current_state
 
     if previous_state is not None:
-        if not previous_state[0].Connected() and next_state[0].Connected():
+        if not previous_state[0].Connected() and current_state[0].Connected():
             frri_speaker.PlaySound("plugged.wav")
             time.sleep(0.5)
             frri_speaker.TTS("Player one connected")
             FRRIUtil.Print("P1 connected")
-        if previous_state[0].Connected() and not next_state[0].Connected():
+        if previous_state[0].Connected() and not current_state[0].Connected():
             frri_speaker.PlaySound("unplugged.wav")
             time.sleep(0.5)
             frri_speaker.TTS("Player one disconnected")
             FRRIUtil.Print("P1 discconnected")
 
-    previous_state = next_state
+    # if controller is plugged in and we know the last state
+    # and they're pressing A now, process
+    if current_state[0].Connected() and current_state[0].A():
+        if not previous_state[0].A():
+            last_press = datetime.now()
+            last_tts = 999
+        elif not captured:
+            delta = (now - last_press).total_seconds()
+            if delta > 4.:
+                frri_twitter.Tweet("Hello from frri.nes!", frri_camera.GetPhoto())
+                frri_speaker.PlaySound("photosnap.wav")
+                captured = True
+            if delta > 3.:
+                if last_tts != 0:
+                    frri_speaker.TTS("LET'S GO!")
+                    last_tts = 0
+            elif delta > 2.:
+                if last_tts != 1:
+                    frri_speaker.TTS("ONE!")
+                    last_tts = 1
+            elif delta > 1.:
+                if last_tts != 2:
+                    frri_speaker.TTS("TWO!")
+                    last_tts = 2
+            else:
+                if last_tts != 3:
+                    frri_speaker.TTS("THREE!")
+                    last_tts = 3
+    else:
+        captured = False
+
+    previous_state = current_state
 
 
+frri_camera.End()
 frri_speaker.End()
 frri_controller_manager.End()
 frri_twitter.End()
