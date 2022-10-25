@@ -126,11 +126,15 @@ class FRRITwitter:
                     response = self.client.create_tweet(text=message, media_ids=[media.media_id])
                 except Exception as e:
                     FRRIUtil.Error("Caught exception during Tweet: "+str(e))
+                    return False
                 FRRIUtil.Print("Tweeted: "+message+" along with photo at "+media_str+" !!!")
+                return True
             else:
                 FRRIUtil.Error("Unable to Tweet without an image; media not supplied to function call")
+                return False
         else:
             FRRIUtil.Error("Attempted to Tweet while Twitter is disabled (see config file)")
+            return False
 
 class FRRIControllerState:
     def __init__(self, new_state):
@@ -246,8 +250,23 @@ class FRRICamera:
         pass
 
     def GetPhoto(self):
-        urllib.request.urlretrieve(FRRICamera.CONST_WEBCAM_URL, os.path.join(FRRICamera.CONST_PATH_TEMP, FRRICamera.CONST_FILENAME_PHOTO))
+        try:
+            urllib.request.urlretrieve(FRRICamera.CONST_WEBCAM_URL, os.path.join(FRRICamera.CONST_PATH_TEMP, FRRICamera.CONST_FILENAME_PHOTO))
+            if not os.path.isfile(os.path.join(FRRICamera.CONST_PATH_TEMP, FRRICamera.CONST_FILENAME_PHOTO)):
+                raise Exception()
+        except Exception as e:
+            FRRIUtil.Error("Unable to GetPhoto()")
+            return None
         return os.path.join(FRRICamera.CONST_PATH_TEMP, FRRICamera.CONST_FILENAME_PHOTO)
+
+    def DeletePhoto(self):
+        try:
+            os.remove(os.path.join(FRRICamera.CONST_PATH_TEMP, FRRICamera.CONST_FILENAME_PHOTO))
+        except Exception as e:
+            FRRIUtil.Error("Unable to DeletePhoto()")
+            return False
+        return True
+
 
 #---
 # Script
@@ -311,8 +330,12 @@ while(True):
 
         if delta > 4.:
             FRRIUtil.Print("Taking photo!")
-            frri_twitter.Tweet("Hello from #FRRI_nes!", frri_camera.GetPhoto())
-            frri_speaker.PlaySound("photosnap.wav")
+            photo = frri_camera.GetPhoto()
+            if (photo is not None) and frri_twitter.Tweet("Hello from #FRRI_nes!", photo):
+                frri_speaker.PlaySound("photosnap.wav")
+                frri_camera.DeletePhoto()
+            else:
+                frri_speaker.PlaySound("photoerror.wav")
             captured = True
         if delta > 3.:
             if last_tts != 0:
