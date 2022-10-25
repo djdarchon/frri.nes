@@ -299,34 +299,34 @@ while(True):
 
     # if controller is plugged in and we know the last state
     # and they're pressing A now, process
-    if current_state[0].Connected() and current_state[0].A():
-        if not previous_state[0].A():
-            last_press = datetime.now()
-            last_tts = 999
-        elif not captured:
-            delta = (now - last_press).total_seconds()
-            if delta > 4.:
-                frri_twitter.Tweet("Hello from frri.nes!", frri_camera.GetPhoto())
-                frri_speaker.PlaySound("photosnap.wav")
-                captured = True
-            if delta > 3.:
-                if last_tts != 0:
-                    frri_speaker.TTS("LET'S GO!")
-                    last_tts = 0
-            elif delta > 2.:
-                if last_tts != 1:
-                    frri_speaker.TTS("ONE!")
-                    last_tts = 1
-            elif delta > 1.:
-                if last_tts != 2:
-                    frri_speaker.TTS("TWO!")
-                    last_tts = 2
-            else:
-                if last_tts != 3:
-                    frri_speaker.TTS("THREE!")
-                    last_tts = 3
-    else:
+    if not current_state[0].Connected() or not previous_state[0].A():
+        last_press = datetime.now()
+        last_tts = 999
         captured = False
+    elif not captured:
+        delta = (now - last_press).total_seconds()
+
+        if delta > 4.:
+            FRRIUtil.Print("Taking photo!")
+            frri_twitter.Tweet("Hello from #FRRI_nes!", frri_camera.GetPhoto())
+            frri_speaker.PlaySound("photosnap.wav")
+            captured = True
+        if delta > 3.:
+            if last_tts != 0:
+                frri_speaker.TTS("LET'S GO!")
+                last_tts = 0
+        elif delta > 2.:
+            if last_tts != 1:
+                frri_speaker.TTS("ONE!")
+                last_tts = 1
+        elif delta > 1.:
+            if last_tts != 2:
+                frri_speaker.TTS("TWO!")
+                last_tts = 2
+        else:
+            if last_tts != 3:
+                frri_speaker.TTS("THREE!")
+                last_tts = 3
 
     previous_state = current_state
 
